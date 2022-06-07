@@ -1,0 +1,17 @@
+{
+  "ignore": [
+      ".git",
+      ".svn",
+      "package*.json",
+      "node_modules/**/node_modules",
+      "client",
+      "public"
+  ],
+  "watch": [
+    "*.js",
+    "*.json"
+  ],
+  "env": {
+      "NODE_ENV": "development"
+  }
+}

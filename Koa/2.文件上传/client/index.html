@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>大文件上传</title>
+  <style>
+    form {
+      border: 1px solid red;
+      padding: 10px;
+    }
+  </style>
+</head>
+
+<body>
+
+
+  <form action="#" class="danwjsc">
+    <label for="">单文件上传</label>
+    <input type="file" name="xgg" accept="image/*">
+    <button type="button">提交</button>
+  </form>
+
+  <form action="#" class="plsc">
+    <label for="">批量上传</label>
+    <input type="file" name="xgg" multiple accept="image/*">
+    <button type="button">提交</button>
+  </form>
+
+  <form action="#" class="dwjbf">
+    <label for="">大文件并发上传</label>
+    <input type="file" name="xgg" multiple>
+    <button type="button">提交</button>
+  </form>
+
+
+
+  <a href="https://mp.weixin.qq.com/s/aRfDFVpDFftn1qFYeLg4Iw" target="_blank">文件上传，搞懂这8种场景就够了</a>
+
+
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <script src="https://cdn.bootcdn.net/ajax/libs/spark-md5/3.0.0/spark-md5.min.js"></script>
+  <script>
+
+    const request = axios.create({
+      baseURL: "http://localhost:8081/upload",
+      timeout: 60000,
+    });
+
+    // 单文件上传
+    (function () {
+      'use strict'
+      const dwjsc = document.querySelector('.danwjsc');
+      const inputDom = dwjsc.querySelector('input');
+      inputDom.addEventListener('change', function (e) {
+        console.log(e.target.files);
+        const file = e.target.files[0];
+        console.log(file.type.includes('image/'));
+        if (!file.type.includes('image/')) { return }
+
+        let formData = new FormData();
+        formData.set('file', file);
+        request.post('/dwjsc', formData, {
+          // 监听上传进度
+          onUploadProgress(progressEvent) {
+            console.log(progressEvent);
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            console.log(percentCompleted);
+          }
+        });
+      });
+    })();
+
+    // 批量上传
+    (function () {
+      'use strict'
+      const dwjsc = document.querySelector('.plsc');
+      const inputDom = dwjsc.querySelector('input');
+      inputDom.addEventListener('change', function (e) {
+        const fileArr = [...e.target.files];
+        console.log(fileArr);
+        const isBool = fileArr.every(item => {
+          if (item.type.includes('image/')) {
+            return true;
+          } else {
+            return false;
+          }
+        });
+        console.log(isBool);
+        if (!isBool) {
+          alert('请上传图片类型的文件')
+          return;
+        }
+
+        const formData = new FormData();
+        fileArr.forEach(item => {
+          formData.append('file', item);
+        });
+        request.post('/plsc', formData, {
+          // 监听上传进度
+          onUploadProgress(progressEvent) {
+            console.log(progressEvent);
+            const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            console.log(percentCompleted);
+          }
+        });
+      });
+    })();
+
+    // 大文件分片上传
+    (function () {
+      'use strict'
+
+      // 使用 FileReader API 分块读取文件的内容，然后通过 spark-md5 这个库提供的方法来计算文件的 MD5 值
+      function calcFileMD5(file) {
+        return new Promise((resolve, reject) => {
+          let chunkSize = 2097152, // 2M
+            chunks = Math.ceil(file.size / chunkSize),
+            currentChunk = 0,
+            spark = new SparkMD5.ArrayBuffer(),
+            fileReader = new FileReader();
+
+          fileReader.onload = (e) => {
+            spark.append(e.target.result);
+            currentChunk++;
+            if (currentChunk < chunks) {
+              loadNext();
+            } else {
+              resolve(spark.end());
+            }
+          };
+
+          fileReader.onerror = (e) => {
+            reject(fileReader.error);
+            reader.abort();
+          };
+
+          function loadNext() {
+            let start = currentChunk * chunkSize,
+              end = start + chunkSize >= file.size ? file.size : start + chunkSize;
+            fileReader.readAsArrayBuffer(file.slice(start, end));
+          }
+          loadNext();
+        });
+      }
+
+      // 实现异步任务的并发控制
+      async function asyncPool(poolLimit, array, iteratorFn) {
+        const ret = []; // 存储所有的异步任务
+        const executing = []; // 存储正在执行的异步任务
+        for (const item of array) {
+          // 调用iteratorFn函数创建异步任务
+          const p = Promise.resolve().then(() => iteratorFn(item, array));
+          ret.push(p); // 保存新的异步任务
+
+          // 当poolLimit值小于或等于总任务个数时，进行并发控制
+          if (poolLimit <= array.length) {
+            // 当任务完成后，从正在执行的任务数组中移除已完成的任务
+            const e = p.then(() => executing.splice(executing.indexOf(e), 1));
+            executing.push(e); // 保存正在执行的异步任务
+            if (executing.length >= poolLimit) {
+              await Promise.race(executing); // 等待较快的任务执行完成
+            }
+          }
+        }
+        return Promise.all(ret);
+      }
+
+      // 用于检测文件是否已经上传过了，如果已存在则秒传，否则返回已上传的分块 ID 列表：
+
+      function checkFileExist(url, name, md5) {
+        return request.get(url, {
+          params: {
+            name,
+            md5,
+          },
+        }).then((response) => response.data);
+      }
+
+      // 如果发现文件尚未上传或者只上传完部分分块的话，就会继续调用 upload 函数来执行上传任务。
+      function upload({
+        url, file, fileMd5,
+        fileSize, chunkSize, chunkIds,
+        poolLimit = 1,
+      }) {
+        const chunks = typeof chunkSize === "number" ? Math.ceil(fileSize / chunkSize) : 1;
+        return asyncPool(poolLimit, [...new Array(chunks).keys()], (i) => {
+          if (chunkIds.indexOf(i + "") !== -1) { // 已上传的分块直接跳过
+            return Promise.resolve();
+          }
+          let start = i * chunkSize;
+          let end = i + 1 == chunks ? fileSize : (i + 1) * chunkSize;
+          const chunk = file.slice(start, end); // 对文件进行切割
+          return uploadChunk({
+            url,
+            chunk,
+            chunkIndex: i,
+            fileMd5,
+            fileName: file.name,
+          });
+        });
+      }
+
+      // 对于切割完的文件块，会通过 uploadChunk 函数，来执行实际的上传操作：
+      function uploadChunk({ url, chunk, chunkIndex, fileMd5, fileName }) {
+        let formData = new FormData();
+        formData.set("file", chunk, fileMd5 + "-" + chunkIndex);
+        formData.set("name", fileName);
+        formData.set("timestamp", Date.now());
+        return request.post(url, formData);
+      }
+
+      // 通知服务端执行分块合并操作
+      function concatFiles(url, name, md5) {
+        return request.get(url, {
+          params: {
+            name,
+            md5,
+          },
+        });
+      }
+
+      async function uploadFile() {
+        // if (!uploadFileEle.files.length) return;
+        if (dwjbfInput.files.length === 0) {
+          alert('请选择文件')
+          return
+        }
+        const file = dwjbfInput.files[0]; // 获取待上传的文件
+        const fileMd5 = await calcFileMD5(file); // 计算文件的MD5
+        const fileStatus = await checkFileExist(  // 判断文件是否已存在
+          "/exists",
+          file.name, fileMd5
+        );
+        if (fileStatus.data && fileStatus.data.isExists) {
+          // alert();
+          console.log("文件已上传[秒传]");
+          return;
+        } else {
+          await upload({
+            url: "/single",
+            file, // 文件对象
+            fileMd5, // 文件MD5值
+            fileSize: file.size, // 文件大小
+            chunkSize: 1 * 1024 * 1024, // 分块大小
+            chunkIds: fileStatus.data.chunkIds, // 已上传的分块列表
+            poolLimit: 3, // 限制的并发数
+          });
+        }
+        await concatFiles("/concatFiles", file.name, fileMd5);
+      }
+
+      const dwjbf = document.querySelector('.dwjbf');
+      const dwjbfInput = dwjbf.querySelector('input');
+      const dwjbfBut = dwjbf.querySelector('button');
+      dwjbfBut.addEventListener('click', function () {
+        uploadFile();
+      })
+    })();
+
+
+  </script>
+</body>
+
+</html>

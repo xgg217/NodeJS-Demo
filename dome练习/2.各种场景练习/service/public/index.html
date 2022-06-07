@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>测试</title>
+</head>
+<body>
+  <h1>测试</h1>
+
+  <form>
+    <label for="">账号</label>
+    <input type="text" placeholder="请输入账号" class="user">
+    <label for="">密码</label>
+    <input type="text" placeholder="请输入密码" class="pwd">
+    <button type="button" class="login">登录</button>
+  </form>
+
+  <button type="button" class="add">登录</button>
+  <img src="./upload/70c787f098679d1dfd5df82362cdf0e8" alt="">
+
+  <!-- 上传图片 -->
+  <form action="/api/upload/add" method="POST" enctype="multipart/form-data">
+    <p>
+      <input type="text" name="a">
+    </p>
+    <p>
+      <input type="file" name="img">
+    </p>
+    <button>提交</button>
+  </form>
+
+  <div class="ajaxsm">
+      <p>
+        <input type="text" name="a" class="txt">
+      </p>
+      <p>
+        <input type="file" name="img" class="files">
+      </p>
+      <button class="tj" type="button">提交</button>
+  </div>
+
+
+
+  <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+  <script src="./src/js/index.js"></script>
+</body>
+</html>
