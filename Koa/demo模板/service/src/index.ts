@@ -22,5 +22,5 @@ app.use(cors());
 app.use(testRouter);
 
 server.listen(8082, () => {
-  console.log('启动1');
+  console.log('启动1 ');
 });
